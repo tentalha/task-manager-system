@@ -1,0 +1,78 @@
+services:
+  # MongoDB Service
+  mongodb:
+    image: mongo:7.0
+    container_name: task-management-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: taskmanagement
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - task-management-network
+
+  # Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: task-management-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/taskmanagement
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/tasks?page=1&limit=1', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - task-management-network
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: task-management-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:5000/api
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks:
+      - task-management-network
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  task-management-network:
+    driver: bridge
+
